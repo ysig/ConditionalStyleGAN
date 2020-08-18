@@ -24,6 +24,18 @@ def parse_tfrecord_tf(record):
     data = tf.decode_raw(features['data'], tf.uint8)
     return tf.reshape(data, features['shape'])
 
+def parse_tfrecord_tf_raw(record):
+    features = tf.parse_single_example(
+        record,
+        features={
+            "shape": tf.FixedLenFeature([3], tf.int64),
+            "img": tf.FixedLenFeature([], tf.string),
+        },
+    )
+    image = tf.image.decode_image(features['img']) 
+    return tf.transpose(image, [2,0,1]) 
+    #return tf.reshape(data, features["shape"])
+
 def parse_tfrecord_np(record):
     ex = tf.train.Example()
     ex.ParseFromString(record)
@@ -44,6 +56,7 @@ class TFRecordDataset:
         shuffle_mb      = 4096,     # Shuffle data within specified window (megabytes), 0 = disable shuffling.
         prefetch_mb     = 2048,     # Amount of data to prefetch (megabytes), 0 = disable prefetching.
         buffer_mb       = 256,      # Read buffer size (megabytes).
+        use_raw = True,
         num_threads     = 2):       # Number of concurrent threads.
 
         self.tfrecord_dir       = 'dataset/logos'
@@ -123,7 +136,10 @@ class TFRecordDataset:
                 if tfr_lod < 0:
                     continue
                 dset = tf.data.TFRecordDataset(tfr_file, compression_type='', buffer_size=buffer_mb<<20)
-                dset = dset.map(parse_tfrecord_tf, num_parallel_calls=num_threads)
+                if use_raw:
+                    dset = dset.map(parse_tfrecord_tf_raw, num_parallel_calls=num_threads)
+                else:
+                    dset = dset.map(parse_tfrecord_tf, num_parallel_calls=num_threads)
                 dset = tf.data.Dataset.zip((dset, self._tf_labels_dataset))
                 bytes_per_item = np.prod(tfr_shape) * np.dtype(self.dtype).itemsize
                 if shuffle_mb > 0:
